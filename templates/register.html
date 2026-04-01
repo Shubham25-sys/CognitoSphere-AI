@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Register – CognitoSphere AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}" />
+</head>
+<body>
+
+  <!-- Toast container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Hidden flash data for JS -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    <div id="flashData" style="display:none">
+      {% for category, message in messages %}
+        <span data-cat="{{ category }}">{{ message }}</span>
+      {% endfor %}
+    </div>
+  {% endwith %}
+
+  <div class="auth-wrapper">
+    <div class="auth-card">
+
+      <div class="auth-logo">
+        <div class="logo-icon">🤖</div>
+        <h1>CognitoSphere AI</h1>
+        <p>Create your account</p>
+      </div>
+
+      <form id="registerForm" method="POST" action="{{ url_for('register') }}" class="auth-form" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+        <!-- Username -->
+        <div class="form-group" id="grp-username">
+          <label for="username">Username</label>
+          <div class="input-icon-wrap">
+            <span class="input-icon">👤</span>
+            <input type="text" id="username" name="username" placeholder="3–30 chars, letters/numbers/_" autocomplete="username" maxlength="30"/>
+          </div>
+          <span class="field-error" id="err-username"></span>
+        </div>
+
+        <!-- Email -->
+        <div class="form-group" id="grp-email">
+          <label for="email">Email</label>
+          <div class="input-icon-wrap">
+            <span class="input-icon">✉️</span>
+            <input type="email" id="email" name="email" placeholder="Enter your email" autocomplete="email"/>
+          </div>
+          <span class="field-error" id="err-email"></span>
+        </div>
+
+        <!-- Password -->
+        <div class="form-group" id="grp-password">
+          <label for="password">Password</label>
+          <div class="input-icon-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="password" name="password" placeholder="Min. 8 chars, 1 uppercase, 1 number" autocomplete="new-password"/>
+            <button type="button" class="toggle-pass" onclick="togglePassword('password', this)">👁</button>
+          </div>
+          <span class="field-error" id="err-password"></span>
+          <!-- Password strength bar -->
+          <div class="strength-bar" id="strengthBar">
+            <div class="strength-fill" id="strengthFill"></div>
+          </div>
+          <span class="strength-label" id="strengthLabel"></span>
+        </div>
+
+        <!-- Confirm Password -->
+        <div class="form-group" id="grp-confirm_password">
+          <label for="confirm_password">Confirm Password</label>
+          <div class="input-icon-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="confirm_password" name="confirm_password" placeholder="Repeat your password" autocomplete="new-password"/>
+            <button type="button" class="toggle-pass" onclick="togglePassword('confirm_password', this)">👁</button>
+          </div>
+          <span class="field-error" id="err-confirm_password"></span>
+        </div>
+
+        <button type="submit" class="btn-auth" id="submitBtn">Create Account</button>
+      </form>
+
+      <p class="auth-footer">
+        Already have an account? <a href="{{ url_for('login') }}">Sign in</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // ── Toast system ──────────────────────────────────────
+    function showToast(message, type = 'error') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.innerHTML = `
+        <span class="toast-icon">${type === 'success' ? '✓' : type === 'info' ? 'ℹ' : '✕'}</span>
+        <span class="toast-msg">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>`;
+      container.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('show'));
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 4500);
+    }
+
+    // Load server flash messages as toasts
+    document.querySelectorAll('#flashData span').forEach(el => {
+      showToast(el.textContent.trim(), el.dataset.cat);
+    });
+
+    // ── Field helpers ─────────────────────────────────────
+    function setError(id, msg) {
+      document.getElementById('grp-' + id).classList.add('has-error');
+      document.getElementById('grp-' + id).classList.remove('has-success');
+      document.getElementById('err-' + id).textContent = msg;
+      document.getElementById(id).classList.add('input-error');
+      document.getElementById(id).classList.remove('input-success');
+    }
+
+    function setSuccess(id) {
+      document.getElementById('grp-' + id).classList.remove('has-error');
+      document.getElementById('grp-' + id).classList.add('has-success');
+      document.getElementById('err-' + id).textContent = '';
+      document.getElementById(id).classList.remove('input-error');
+      document.getElementById(id).classList.add('input-success');
+    }
+
+    // ── Validators ────────────────────────────────────────
+    function validateUsername() {
+      const v = document.getElementById('username').value.trim();
+      if (!v) { setError('username', 'Username is required.'); return false; }
+      if (v.length < 3) { setError('username', 'Username must be at least 3 characters.'); return false; }
+      if (v.length > 30) { setError('username', 'Username must be under 30 characters.'); return false; }
+      if (!/^[a-zA-Z0-9_]+$/.test(v)) { setError('username', 'Only letters, numbers, and underscores allowed.'); return false; }
+      setSuccess('username'); return true;
+    }
+
+    function validateEmail() {
+      const v = document.getElementById('email').value.trim();
+      if (!v) { setError('email', 'Email is required.'); return false; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { setError('email', 'Enter a valid email address.'); return false; }
+      setSuccess('email'); return true;
+    }
+
+    function validatePassword() {
+      const v = document.getElementById('password').value;
+      if (!v) { setError('password', 'Password is required.'); return false; }
+      if (v.length < 8) { setError('password', 'Password must be at least 8 characters.'); return false; }
+      if (!/[A-Z]/.test(v)) { setError('password', 'Add at least one uppercase letter.'); return false; }
+      if (!/[0-9]/.test(v)) { setError('password', 'Add at least one number.'); return false; }
+      setSuccess('password'); return true;
+    }
+
+    function validateConfirm() {
+      const pw  = document.getElementById('password').value;
+      const cfm = document.getElementById('confirm_password').value;
+      if (!cfm) { setError('confirm_password', 'Please confirm your password.'); return false; }
+      if (pw !== cfm) { setError('confirm_password', 'Passwords do not match.'); return false; }
+      setSuccess('confirm_password'); return true;
+    }
+
+    // ── Password strength meter ───────────────────────────
+    function updateStrength(pw) {
+      const fill  = document.getElementById('strengthFill');
+      const label = document.getElementById('strengthLabel');
+      if (!pw) { fill.style.width = '0'; fill.className = 'strength-fill'; label.textContent = ''; return; }
+
+      let score = 0;
+      if (pw.length >= 8)  score++;
+      if (pw.length >= 12) score++;
+      if (/[A-Z]/.test(pw)) score++;
+      if (/[0-9]/.test(pw)) score++;
+      if (/[^a-zA-Z0-9]/.test(pw)) score++;
+
+      const levels = [
+        { pct: '20%', cls: 'strength-weak',   text: 'Weak' },
+        { pct: '40%', cls: 'strength-weak',   text: 'Weak' },
+        { pct: '60%', cls: 'strength-fair',   text: 'Fair' },
+        { pct: '80%', cls: 'strength-good',   text: 'Good' },
+        { pct: '100%',cls: 'strength-strong', text: 'Strong' },
+      ];
+      const lvl = levels[Math.min(score, 4)];
+      fill.style.width  = lvl.pct;
+      fill.className    = 'strength-fill ' + lvl.cls;
+      label.textContent = lvl.text;
+      label.className   = 'strength-label ' + lvl.cls;
+    }
+
+    // ── Live validation (on blur + while fixing errors) ───
+    const fields = [
+      { id: 'username', fn: validateUsername },
+      { id: 'email',    fn: validateEmail    },
+      { id: 'password', fn: validatePassword },
+      { id: 'confirm_password', fn: validateConfirm, errId: 'confirm' },
+    ];
+
+    fields.forEach(({ id, fn }) => {
+      const el = document.getElementById(id);
+      el.addEventListener('blur', fn);
+      el.addEventListener('input', () => {
+        if (el.classList.contains('input-error')) fn();
+      });
+    });
+
+    document.getElementById('password').addEventListener('input', function() {
+      updateStrength(this.value);
+      // Re-check confirm if already touched
+      const cfm = document.getElementById('confirm_password');
+      if (cfm.classList.contains('input-error') || cfm.classList.contains('input-success')) {
+        validateConfirm();
+      }
+    });
+
+    // ── Form submit ───────────────────────────────────────
+    document.getElementById('registerForm').addEventListener('submit', function(e) {
+      const results = [validateUsername(), validateEmail(), validatePassword(), validateConfirm()];
+      if (!results.every(Boolean)) {
+        e.preventDefault();
+        showToast('Please fix all errors before submitting.', 'error');
+      }
+    });
+
+    // ── Show/hide password ────────────────────────────────
+    function togglePassword(fieldId, btn) {
+      const field = document.getElementById(fieldId);
+      field.type = field.type === 'password' ? 'text' : 'password';
+      btn.textContent = field.type === 'password' ? '👁' : '🙈';
+    }
+  </script>
+</body>
+</html>

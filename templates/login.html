@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login – CognitoSphere AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}" />
+</head>
+<body>
+
+  <!-- Toast container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Hidden flash data for JS -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    <div id="flashData" style="display:none">
+      {% for category, message in messages %}
+        <span data-cat="{{ category }}">{{ message }}</span>
+      {% endfor %}
+    </div>
+  {% endwith %}
+
+  <div class="auth-wrapper">
+    <div class="auth-card">
+
+      <div class="auth-logo">
+        <div class="logo-icon">🤖</div>
+        <h1>CognitoSphere AI</h1>
+        <p>Sign in to your account</p>
+      </div>
+
+      <form id="loginForm" method="POST" action="{{ url_for('login') }}" class="auth-form" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+        <!-- Email -->
+        <div class="form-group" id="grp-email">
+          <label for="email">Email</label>
+          <div class="input-icon-wrap">
+            <span class="input-icon">✉️</span>
+            <input type="email" id="email" name="email" placeholder="Enter your email" autocomplete="email"/>
+          </div>
+          <span class="field-error" id="err-email"></span>
+        </div>
+
+        <!-- Password -->
+        <div class="form-group" id="grp-password">
+          <label for="password">Password</label>
+          <div class="input-icon-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password"/>
+            <button type="button" class="toggle-pass" onclick="togglePassword('password', this)">👁</button>
+          </div>
+          <span class="field-error" id="err-password"></span>
+        </div>
+
+        <div class="form-row">
+          <label class="checkbox-label">
+            <input type="checkbox" name="remember"/>
+            <span>Remember me</span>
+          </label>
+          <a href="{{ url_for('forgot_password') }}" class="forgot-link">Forgot password?</a>
+        </div>
+
+        <button type="submit" class="btn-auth" id="submitBtn">Sign In</button>
+      </form>
+
+      <p class="auth-footer">
+        Don't have an account? <a href="{{ url_for('register') }}">Create one</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // ── Toast system ──────────────────────────────────────
+    function showToast(message, type = 'error') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.innerHTML = `
+        <span class="toast-icon">${type === 'success' ? '✓' : type === 'info' ? 'ℹ' : '✕'}</span>
+        <span class="toast-msg">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>`;
+      container.appendChild(toast);
+      // Animate in
+      requestAnimationFrame(() => toast.classList.add('show'));
+      // Auto-remove
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    }
+
+    // ── Load flash messages as toasts ────────────────────
+    document.querySelectorAll('#flashData span').forEach(el => {
+      showToast(el.textContent.trim(), el.dataset.cat);
+    });
+
+    // ── Field helpers ─────────────────────────────────────
+    function setError(fieldId, message) {
+      const grp = document.getElementById('grp-' + fieldId);
+      const err = document.getElementById('err-' + fieldId);
+      const inp = document.getElementById(fieldId);
+      grp.classList.add('has-error');
+      grp.classList.remove('has-success');
+      err.textContent = message;
+      inp.classList.add('input-error');
+      inp.classList.remove('input-success');
+    }
+
+    function setSuccess(fieldId) {
+      const grp = document.getElementById('grp-' + fieldId);
+      const err = document.getElementById('err-' + fieldId);
+      const inp = document.getElementById(fieldId);
+      grp.classList.remove('has-error');
+      grp.classList.add('has-success');
+      err.textContent = '';
+      inp.classList.remove('input-error');
+      inp.classList.add('input-success');
+    }
+
+    function clearState(fieldId) {
+      const grp = document.getElementById('grp-' + fieldId);
+      const inp = document.getElementById(fieldId);
+      grp.classList.remove('has-error', 'has-success');
+      inp.classList.remove('input-error', 'input-success');
+      document.getElementById('err-' + fieldId).textContent = '';
+    }
+
+    // ── Validators ────────────────────────────────────────
+    function validateEmail() {
+      const val = document.getElementById('email').value.trim();
+      if (!val) { setError('email', 'Email is required.'); return false; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { setError('email', 'Enter a valid email address.'); return false; }
+      setSuccess('email'); return true;
+    }
+
+    function validatePassword() {
+      const val = document.getElementById('password').value;
+      if (!val) { setError('password', 'Password is required.'); return false; }
+      setSuccess('password'); return true;
+    }
+
+    // ── Live validation on blur ───────────────────────────
+    document.getElementById('email').addEventListener('blur', validateEmail);
+    document.getElementById('password').addEventListener('blur', validatePassword);
+    document.getElementById('email').addEventListener('input', () => {
+      if (document.getElementById('email').classList.contains('input-error')) validateEmail();
+    });
+
+    // ── Form submit ───────────────────────────────────────
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+      const ok = [validateEmail(), validatePassword()].every(Boolean);
+      if (!ok) {
+        e.preventDefault();
+        showToast('Please fix the errors before submitting.', 'error');
+      }
+    });
+
+    // ── Show/hide password ────────────────────────────────
+    function togglePassword(fieldId, btn) {
+      const field = document.getElementById(fieldId);
+      field.type = field.type === 'password' ? 'text' : 'password';
+      btn.textContent = field.type === 'password' ? '👁' : '🙈';
+    }
+  </script>
+</body>
+</html>

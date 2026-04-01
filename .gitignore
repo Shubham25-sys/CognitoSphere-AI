@@ -1,0 +1,26 @@
+# Secrets — NEVER commit these
+.env
+*.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Database (contains user data)
+instance/
+*.db
+*.sqlite3
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

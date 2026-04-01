@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Verify OTP – CognitoSphere AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}" />
+</head>
+<body>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    <div id="flashData" style="display:none">
+      {% for category, message in messages %}
+        <span data-cat="{{ category }}">{{ message }}</span>
+      {% endfor %}
+    </div>
+  {% endwith %}
+
+  <div class="auth-wrapper">
+    <div class="auth-card">
+
+      <div class="auth-logo">
+        <div class="logo-icon">📨</div>
+        <h1>CognitoSphere AI</h1>
+        <p>Enter the OTP</p>
+      </div>
+
+      <p class="otp-hint">
+        A 6-digit OTP was sent to <strong>{{ masked_email }}</strong>.<br>
+        It expires in <strong>10 minutes</strong>.
+      </p>
+
+      <form id="otpForm" method="POST" action="{{ url_for('verify_otp') }}" class="auth-form" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+        <div class="form-group" id="grp-otp">
+          <label for="otp">One-Time Password</label>
+          <div class="otp-inputs" id="otpInputs">
+            <input class="otp-box" maxlength="1" data-index="0" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-box" maxlength="1" data-index="1" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-box" maxlength="1" data-index="2" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-box" maxlength="1" data-index="3" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-box" maxlength="1" data-index="4" inputmode="numeric" pattern="[0-9]" />
+            <input class="otp-box" maxlength="1" data-index="5" inputmode="numeric" pattern="[0-9]" />
+          </div>
+          <!-- Hidden field that stores the assembled OTP -->
+          <input type="hidden" id="otp" name="otp" />
+          <span class="field-error" id="err-otp"></span>
+        </div>
+
+        <!-- Countdown timer -->
+        <div class="otp-timer" id="otpTimer">OTP expires in <strong id="countdown">10:00</strong></div>
+
+        <button type="submit" class="btn-auth" id="submitBtn">Verify OTP</button>
+      </form>
+
+      <p class="auth-footer">
+        Didn't receive it? <a href="{{ url_for('forgot_password') }}">Resend OTP</a>
+        &nbsp;·&nbsp; <a href="{{ url_for('login') }}">Back to login</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // ── Toast ─────────────────────────────────────────────
+    function showToast(message, type = 'error') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.innerHTML = `
+        <span class="toast-icon">${type === 'success' ? '✓' : type === 'info' ? 'ℹ' : '✕'}</span>
+        <span class="toast-msg">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>`;
+      container.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('show'));
+      setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 5000);
+    }
+
+    document.querySelectorAll('#flashData span').forEach(el => {
+      showToast(el.textContent.trim(), el.dataset.cat);
+    });
+
+    // ── OTP boxes: auto-advance & backspace ───────────────
+    const boxes = document.querySelectorAll('.otp-box');
+    const hiddenOtp = document.getElementById('otp');
+
+    boxes.forEach((box, i) => {
+      box.addEventListener('input', () => {
+        box.value = box.value.replace(/[^0-9]/g, '').slice(-1);
+        assembleOtp();
+        if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+      });
+
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !box.value && i > 0) {
+          boxes[i - 1].focus();
+          boxes[i - 1].value = '';
+          assembleOtp();
+        }
+      });
+
+      box.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+        [...text.slice(0, 6)].forEach((ch, j) => { if (boxes[j]) boxes[j].value = ch; });
+        assembleOtp();
+        const next = Math.min(text.length, 5);
+        boxes[next].focus();
+      });
+    });
+
+    function assembleOtp() {
+      hiddenOtp.value = [...boxes].map(b => b.value).join('');
+    }
+
+    // ── Form submit validation ────────────────────────────
+    document.getElementById('otpForm').addEventListener('submit', function(e) {
+      assembleOtp();
+      if (hiddenOtp.value.length !== 6) {
+        e.preventDefault();
+        document.getElementById('err-otp').textContent = 'Please enter all 6 digits.';
+        boxes[0].focus();
+        return;
+      }
+      document.getElementById('submitBtn').textContent = 'Verifying…';
+      document.getElementById('submitBtn').disabled = true;
+    });
+
+    // ── Countdown timer (10 min) ──────────────────────────
+    const forgotUrl   = "{{ url_for('forgot_password') }}";
+    let seconds       = 10 * 60;
+    const countdownEl = document.getElementById('countdown');
+    const timerEl     = document.getElementById('otpTimer');
+
+    const timer = setInterval(() => {
+      seconds--;
+      const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+      const s = String(seconds % 60).padStart(2, '0');
+      countdownEl.textContent = `${m}:${s}`;
+      if (seconds <= 0) {
+        clearInterval(timer);
+        timerEl.innerHTML = `<span style="color:#f85149">OTP expired. <a href="${forgotUrl}">Request a new one</a>.</span>`;
+      }
+    }, 1000);
+
+    // Focus first box on load
+    boxes[0].focus();
+  </script>
+</body>
+</html>

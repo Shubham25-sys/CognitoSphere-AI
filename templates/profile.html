@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Profile – CognitoSphere AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='profile.css') }}"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    <div id="flashData" style="display:none">
+      {% for category, message in messages %}
+        <span data-cat="{{ category }}">{{ message }}</span>
+      {% endfor %}
+    </div>
+  {% endwith %}
+
+  <!-- Delete Account Modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal-box">
+      <div class="modal-icon">⚠️</div>
+      <h3>Delete Account</h3>
+      <p>This action is <strong>irreversible</strong>. All your chats, messages, and data will be permanently deleted.</p>
+      <p class="modal-type-hint">Type <strong>DELETE</strong> to confirm:</p>
+      <input type="text" id="deleteConfirmInput" placeholder="Type DELETE here"
+             oninput="checkDeleteInput()" autocomplete="off"/>
+      <div class="modal-actions">
+        <button class="btn-modal-cancel" onclick="closeDeleteModal()">Cancel</button>
+        <button class="btn-modal-delete" id="confirmDeleteBtn" disabled onclick="deleteAccount()">
+          Delete My Account
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="profile-page">
+
+    <!-- Back button -->
+    <a href="{{ url_for('index') }}" class="back-link">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      Back to Chat
+    </a>
+
+    <!-- Page title -->
+    <h1 class="profile-heading">Profile Settings</h1>
+
+    <!-- Avatar + Info -->
+    <div class="profile-hero">
+      <div class="profile-avatar">{{ user.username[0].upper() }}</div>
+      <div>
+        <div class="profile-name">{{ user.username }}</div>
+        <div class="profile-email">{{ user.email }}</div>
+      </div>
+    </div>
+
+    <!-- ── Usage Statistics ── -->
+    <div class="settings-card">
+      <div class="card-header">
+        <span class="card-icon">📊</span>
+        <h2>Usage Statistics</h2>
+      </div>
+      <p class="card-desc">Your activity overview on CognitoSphere AI.</p>
+
+      <!-- Stat pills -->
+      <div class="stats-grid">
+        <div class="stat-pill">
+          <div class="stat-value" id="statSessions">–</div>
+          <div class="stat-label">Chat Sessions</div>
+        </div>
+        <div class="stat-pill">
+          <div class="stat-value" id="statMessages">–</div>
+          <div class="stat-label">Messages Sent</div>
+        </div>
+        <div class="stat-pill">
+          <div class="stat-value" id="statAI">–</div>
+          <div class="stat-label">AI Responses</div>
+        </div>
+        <div class="stat-pill">
+          <div class="stat-value" id="statTotal">–</div>
+          <div class="stat-label">Total Interactions</div>
+        </div>
+      </div>
+
+      <!-- Charts row -->
+      <div class="charts-row">
+        <div class="chart-wrap">
+          <p class="chart-title">Activity — Last 7 Days</p>
+          <canvas id="activityChart" height="180"></canvas>
+        </div>
+        <div class="chart-wrap chart-wrap-sm">
+          <p class="chart-title">Message Breakdown</p>
+          <canvas id="breakdownChart" height="180"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Update Username ── -->
+    <div class="settings-card">
+      <div class="card-header">
+        <span class="card-icon">👤</span>
+        <h2>Update Username</h2>
+      </div>
+      <p class="card-desc">Change how your name appears across CognitoSphere AI.</p>
+
+      <form id="usernameForm" method="POST" action="{{ url_for('profile') }}" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="form-group" id="grp-username">
+          <label for="username">Username</label>
+          <div class="input-icon-wrap">
+            <span class="input-icon">👤</span>
+            <input type="text" id="username" name="username"
+                   value="{{ user.username }}"
+                   placeholder="3–30 chars, letters/numbers/_"
+                   maxlength="30" autocomplete="off"/>
+          </div>
+          <span class="field-error" id="err-username"></span>
+        </div>
+        <button type="submit" class="btn-save">Save Changes</button>
+      </form>
+    </div>
+
+    <!-- ── Send a Query ── -->
+    <div class="settings-card">
+      <div class="card-header">
+        <span class="card-icon">💬</span>
+        <h2>Send a Query</h2>
+      </div>
+      <p class="card-desc">Have a question or feedback about CognitoSphere AI? We'd love to hear from you.</p>
+
+      <div class="form-group" id="grp-subject">
+        <label for="querySubject">Subject</label>
+        <div class="input-icon-wrap">
+          <span class="input-icon">📌</span>
+          <input type="text" id="querySubject" placeholder="e.g. Feature request, Bug report"
+                 maxlength="100" autocomplete="off"/>
+        </div>
+        <span class="field-error" id="err-subject"></span>
+      </div>
+
+      <div class="form-group" id="grp-message">
+        <label for="queryMessage">Message</label>
+        <textarea id="queryMessage" class="query-textarea"
+                  placeholder="Describe your query in detail..." maxlength="1000"></textarea>
+        <div class="char-count"><span id="charCount">0</span> / 1000</div>
+        <span class="field-error" id="err-message"></span>
+      </div>
+
+      <button class="btn-save" id="querySubmitBtn" onclick="submitQuery()">Submit Query</button>
+    </div>
+
+    <!-- ── Danger Zone ── -->
+    <div class="settings-card danger-card">
+      <div class="card-header">
+        <span class="card-icon">🗑️</span>
+        <h2>Danger Zone</h2>
+      </div>
+      <p class="card-desc danger-text">
+        Permanently delete your account and all associated data including chat history.
+        <strong>This cannot be undone.</strong>
+      </p>
+      <button class="btn-delete-account" onclick="showDeleteModal()">
+        Delete My Account
+      </button>
+    </div>
+
+    <!-- Copyright -->
+    <p class="profile-copyright">
+      &copy; 2026 CognitoSphere AI &mdash; Created by <strong>Shubham Rajendra Wani</strong> &middot; Developer
+    </p>
+
+  </div><!-- end profile-page -->
+
+  <script>
+    // ── Toast ─────────────────────────────────────────────
+    function showToast(message, type = 'error') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.innerHTML = `
+        <span class="toast-icon">${type === 'success' ? '✓' : type === 'info' ? 'ℹ' : '✕'}</span>
+        <span class="toast-msg">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>`;
+      container.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('show'));
+      setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 4500);
+    }
+
+    document.querySelectorAll('#flashData span').forEach(el => {
+      showToast(el.textContent.trim(), el.dataset.cat);
+    });
+
+    // ── Load Usage Stats + Charts ────────────────────────
+    async function loadStats() {
+      try {
+        const res  = await fetch('/profile/stats');
+        const data = await res.json();
+
+        document.getElementById('statSessions').textContent = data.total_sessions;
+        document.getElementById('statMessages').textContent = data.total_messages;
+        document.getElementById('statAI').textContent       = data.total_ai;
+        document.getElementById('statTotal').textContent    = data.total_messages + data.total_ai;
+
+        // ── Bar chart: sessions per day ──────────────────
+        new Chart(document.getElementById('activityChart'), {
+          type: 'bar',
+          data: {
+            labels: data.chart_labels,
+            datasets: [{
+              label: 'Sessions',
+              data:  data.chart_daily,
+              backgroundColor: 'rgba(56,139,253,0.5)',
+              borderColor:     'rgba(88,166,255,1)',
+              borderWidth: 2,
+              borderRadius: 6,
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: {
+                label: ctx => ` ${ctx.parsed.y} session${ctx.parsed.y !== 1 ? 's' : ''}`
+              }}
+            },
+            scales: {
+              x: {
+                ticks: { color: '#8b949e', font: { size: 11 } },
+                grid:  { color: 'rgba(48,54,61,0.6)' }
+              },
+              y: {
+                beginAtZero: true,
+                ticks: { color: '#8b949e', stepSize: 1, precision: 0 },
+                grid:  { color: 'rgba(48,54,61,0.6)' }
+              }
+            }
+          }
+        });
+
+        // ── Doughnut chart: user vs AI messages ──────────
+        const total = data.total_messages + data.total_ai;
+        new Chart(document.getElementById('breakdownChart'), {
+          type: 'doughnut',
+          data: {
+            labels: ['Your Messages', 'AI Responses'],
+            datasets: [{
+              data: [data.total_messages, data.total_ai],
+              backgroundColor: ['rgba(56,139,253,0.8)', 'rgba(63,185,80,0.8)'],
+              borderColor:     ['#388bfd', '#3fb950'],
+              borderWidth: 2,
+              hoverOffset: 6,
+            }]
+          },
+          options: {
+            responsive: true,
+            cutout: '65%',
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: { color: '#8b949e', font: { size: 11 }, padding: 14 }
+              },
+              tooltip: { callbacks: {
+                label: ctx => {
+                  const pct = total ? Math.round(ctx.parsed / total * 100) : 0;
+                  return ` ${ctx.parsed} (${pct}%)`;
+                }
+              }}
+            }
+          }
+        });
+
+      } catch (e) {
+        console.error('Stats load failed:', e);
+      }
+    }
+
+    loadStats();
+
+    // ── Username validation ───────────────────────────────
+    function setError(id, msg) {
+      document.getElementById('grp-' + id).classList.add('has-error');
+      document.getElementById('grp-' + id).classList.remove('has-success');
+      document.getElementById('err-' + id).textContent = msg;
+      document.getElementById(id).classList.add('input-error');
+      document.getElementById(id).classList.remove('input-success');
+    }
+    function setSuccess(id) {
+      document.getElementById('grp-' + id).classList.remove('has-error');
+      document.getElementById('grp-' + id).classList.add('has-success');
+      document.getElementById('err-' + id).textContent = '';
+      document.getElementById(id).classList.remove('input-error');
+      document.getElementById(id).classList.add('input-success');
+    }
+
+    function validateUsername() {
+      const v = document.getElementById('username').value.trim();
+      if (!v) { setError('username', 'Username is required.'); return false; }
+      if (v.length < 3) { setError('username', 'Must be at least 3 characters.'); return false; }
+      if (!/^[a-zA-Z0-9_]+$/.test(v)) { setError('username', 'Only letters, numbers, and underscores.'); return false; }
+      setSuccess('username'); return true;
+    }
+
+    document.getElementById('username').addEventListener('blur', validateUsername);
+    document.getElementById('username').addEventListener('input', () => {
+      if (document.getElementById('username').classList.contains('input-error')) validateUsername();
+    });
+
+    document.getElementById('usernameForm').addEventListener('submit', function(e) {
+      if (!validateUsername()) {
+        e.preventDefault();
+        showToast('Please fix the errors before submitting.', 'error');
+      }
+    });
+
+    // ── Query char counter ────────────────────────────────
+    document.getElementById('queryMessage').addEventListener('input', function() {
+      document.getElementById('charCount').textContent = this.value.length;
+    });
+
+    // ── Submit Query ──────────────────────────────────────
+    async function submitQuery() {
+      const subject = document.getElementById('querySubject').value.trim();
+      const message = document.getElementById('queryMessage').value.trim();
+      let valid = true;
+
+      if (!subject) {
+        document.getElementById('grp-subject').classList.add('has-error');
+        document.getElementById('err-subject').textContent = 'Subject is required.';
+        document.getElementById('querySubject').classList.add('input-error');
+        valid = false;
+      } else {
+        document.getElementById('grp-subject').classList.remove('has-error');
+        document.getElementById('err-subject').textContent = '';
+        document.getElementById('querySubject').classList.remove('input-error');
+      }
+
+      if (!message) {
+        document.getElementById('grp-message').classList.add('has-error');
+        document.getElementById('err-message').textContent = 'Message is required.';
+        document.getElementById('queryMessage').classList.add('input-error');
+        valid = false;
+      } else {
+        document.getElementById('grp-message').classList.remove('has-error');
+        document.getElementById('err-message').textContent = '';
+        document.getElementById('queryMessage').classList.remove('input-error');
+      }
+
+      if (!valid) return;
+
+      const btn = document.getElementById('querySubmitBtn');
+      btn.textContent = 'Submitting…';
+      btn.disabled = true;
+
+      try {
+        const res  = await fetch('/profile/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subject, message }),
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || 'Failed to submit.', 'error'); return; }
+        showToast('Query submitted successfully!', 'success');
+        document.getElementById('querySubject').value = '';
+        document.getElementById('queryMessage').value = '';
+        document.getElementById('charCount').textContent = '0';
+      } catch {
+        showToast('Network error. Please try again.', 'error');
+      } finally {
+        btn.textContent = 'Submit Query';
+        btn.disabled = false;
+      }
+    }
+
+    // ── Delete Account Modal ──────────────────────────────
+    function showDeleteModal() {
+      document.getElementById('deleteModal').classList.add('show');
+      document.getElementById('deleteConfirmInput').value = '';
+      document.getElementById('confirmDeleteBtn').disabled = true;
+      document.body.style.overflow = 'hidden';
+      setTimeout(() => document.getElementById('deleteConfirmInput').focus(), 200);
+    }
+
+    function closeDeleteModal() {
+      document.getElementById('deleteModal').classList.remove('show');
+      document.body.style.overflow = '';
+    }
+
+    function checkDeleteInput() {
+      const val = document.getElementById('deleteConfirmInput').value;
+      document.getElementById('confirmDeleteBtn').disabled = (val !== 'DELETE');
+    }
+
+    async function deleteAccount() {
+      const btn = document.getElementById('confirmDeleteBtn');
+      btn.textContent = 'Deleting…';
+      btn.disabled = true;
+
+      try {
+        const res  = await fetch('/profile/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: 'DELETE' }),
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || 'Failed to delete.', 'error'); return; }
+        window.location.href = '/login';
+      } catch {
+        showToast('Network error. Please try again.', 'error');
+        btn.textContent = 'Delete My Account';
+        btn.disabled = false;
+      }
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('deleteModal').addEventListener('click', function(e) {
+      if (e.target === this) closeDeleteModal();
+    });
+
+    // Close modal on Escape
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeDeleteModal();
+    });
+  </script>
+</body>
+</html>
