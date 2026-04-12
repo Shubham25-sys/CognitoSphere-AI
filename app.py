@@ -13,6 +13,7 @@ import os
 import re
 import random
 import string
+import threading
 
 load_dotenv()
 
@@ -31,6 +32,7 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=24)
 app.config["SESSION_COOKIE_SECURE"] = False   # Set True when using HTTPS
+app.config["MAIL_TIMEOUT"] = 10              # SMTP connection timeout in seconds
 
 # ── Mail Config (Gmail SMTP) ───────────────────────────────
 app.config["MAIL_SERVER"]         = "smtp.gmail.com"
@@ -529,22 +531,29 @@ def submit_query():
     db.session.add(q)
     db.session.commit()
 
-    try:
-        admin_email = app.config["MAIL_USERNAME"]
-        msg = Message(
-            subject=f"[CognitoSphere Query] {subject}",
-            sender=(current_user.username, admin_email),
-            reply_to=current_user.email,
-            recipients=[admin_email],
-            body=(
-                f"From: {current_user.username} <{current_user.email}>\n\n"
-                f"Subject: {subject}\n\n"
-                f"Message:\n{message}\n"
-            )
-        )
-        mail.send(msg)
-    except Exception as e:
-        app.logger.error(f"Query email failed: {e}")
+    username    = current_user.username
+    user_email  = current_user.email
+    admin_email = app.config["MAIL_USERNAME"]
+
+    def send_query_email():
+        with app.app_context():
+            try:
+                msg = Message(
+                    subject=f"[CognitoSphere Query] {subject}",
+                    sender=(username, admin_email),
+                    reply_to=user_email,
+                    recipients=[admin_email],
+                    body=(
+                        f"From: {username} <{user_email}>\n\n"
+                        f"Subject: {subject}\n\n"
+                        f"Message:\n{message}\n"
+                    )
+                )
+                mail.send(msg)
+            except Exception as e:
+                app.logger.error(f"Query email failed: {e}")
+
+    threading.Thread(target=send_query_email, daemon=True).start()
 
     return jsonify({"status": "submitted"})
 
