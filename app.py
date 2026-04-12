@@ -5,6 +5,7 @@ from flask_wtf.csrf import CSRFProtect, CSRFError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_mail import Mail, Message
+import resend
 from werkzeug.security import generate_password_hash, check_password_hash
 from openai import OpenAI, AuthenticationError, RateLimitError, APIConnectionError, APIStatusError
 from dotenv import load_dotenv
@@ -13,8 +14,11 @@ import os
 import re
 import random
 import string
+import threading
 
 load_dotenv()
+
+resend.api_key = os.environ.get("RESEND_API_KEY", "")
 
 app = Flask(__name__)
 
@@ -31,6 +35,7 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=24)
 app.config["SESSION_COOKIE_SECURE"] = False   # Set True when using HTTPS
+app.config["MAIL_TIMEOUT"] = 10              # SMTP connection timeout in seconds
 
 # ── Mail Config (Gmail SMTP) ───────────────────────────────
 app.config["MAIL_SERVER"]         = "smtp.gmail.com"
@@ -92,11 +97,11 @@ def generate_otp() -> str:
     return "".join(random.choices(string.digits, k=6))
 
 def send_otp_email(to_email: str, username: str, otp: str):
-    msg = Message(
-        subject="CognitoSphere AI — Password Reset OTP",
-        recipients=[to_email],
-    )
-    msg.html = f"""
+    resend.Emails.send({
+        "from": "CognitoSphere AI <onboarding@resend.dev>",
+        "to": [to_email],
+        "subject": "CognitoSphere AI — Password Reset OTP",
+        "html": f"""
     <!DOCTYPE html>
     <html>
     <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
@@ -104,7 +109,7 @@ def send_otp_email(to_email: str, username: str, otp: str):
       <div style="max-width:480px;margin:0 auto;background:#161b22;
                   border:1px solid #30363d;border-radius:12px;padding:36px;">
         <div style="text-align:center;margin-bottom:24px;">
-          <div style="font-size:48px;">🤖</div>
+          <div style="font-size:48px;">&#129302;</div>
           <h1 style="font-size:20px;font-weight:700;color:#e6edf3;margin:8px 0 4px;">
             CognitoSphere AI</h1>
           <p style="color:#8b949e;font-size:14px;margin:0;">Password Reset Request</p>
@@ -120,7 +125,7 @@ def send_otp_email(to_email: str, username: str, otp: str):
                        color:#58a6ff;font-family:monospace;">{otp}</span>
         </div>
         <p style="color:#8b949e;font-size:13px;margin:0 0 4px;">
-          ⚠️ Never share this OTP with anyone.</p>
+          Never share this OTP with anyone.</p>
         <p style="color:#8b949e;font-size:13px;margin:0;">
           If you didn't request a password reset, ignore this email.</p>
         <hr style="border:none;border-top:1px solid #30363d;margin:24px 0;">
@@ -128,8 +133,8 @@ def send_otp_email(to_email: str, username: str, otp: str):
           CognitoSphere AI · Powered by GPT-4o mini</p>
       </div>
     </body>
-    </html>"""
-    mail.send(msg)
+    </html>""",
+    })
 
 
 def valid_username(username: str) -> bool:
@@ -529,22 +534,27 @@ def submit_query():
     db.session.add(q)
     db.session.commit()
 
-    try:
-        admin_email = app.config["MAIL_USERNAME"]
-        msg = Message(
-            subject=f"[CognitoSphere Query] {subject}",
-            sender=(current_user.username, admin_email),
-            reply_to=current_user.email,
-            recipients=[admin_email],
-            body=(
-                f"From: {current_user.username} <{current_user.email}>\n\n"
-                f"Subject: {subject}\n\n"
-                f"Message:\n{message}\n"
-            )
-        )
-        mail.send(msg)
-    except Exception as e:
-        app.logger.error(f"Query email failed: {e}")
+    username    = current_user.username
+    user_email  = current_user.email
+    admin_email = app.config["MAIL_USERNAME"]
+
+    def send_query_email():
+        try:
+            resend.Emails.send({
+                "from": "CognitoSphere AI <onboarding@resend.dev>",
+                "to": [admin_email],
+                "reply_to": [user_email],
+                "subject": f"[CognitoSphere Query] {subject}",
+                "text": (
+                    f"From: {username} <{user_email}>\n\n"
+                    f"Subject: {subject}\n\n"
+                    f"Message:\n{message}\n"
+                ),
+            })
+        except Exception as e:
+            app.logger.error(f"Query email failed: {e}")
+
+    threading.Thread(target=send_query_email, daemon=True).start()
 
     return jsonify({"status": "submitted"})
 
